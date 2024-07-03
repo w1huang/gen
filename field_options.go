@@ -81,6 +81,16 @@ var (
 			return m
 		}
 	}
+	FieldCommentReg = func(columnNameReg string, comment string) model.ModifyFieldOpt {
+		reg := regexp.MustCompile(columnNameReg)
+		return func(m *model.Field) *model.Field {
+			if reg.MatchString(m.ColumnName) {
+				m.ColumnComment = comment
+				m.MultilineComment = strings.Contains(comment, "\n")
+			}
+			return m
+		}
+	}
 	// FieldType specify field type in generated struct
 	FieldType = func(columnName string, newType string) model.ModifyFieldOpt {
 		return func(m *model.Field) *model.Field {
@@ -137,12 +147,20 @@ var (
 			return m
 		}
 	}
+	RemoveFieldJSONTagReg = func(columnNameReg string) model.ModifyFieldOpt {
+		reg := regexp.MustCompile(columnNameReg)
+		return func(m *model.Field) *model.Field {
+			if reg.MatchString(m.ColumnName) {
+				m.Tag.Remove(field.TagKeyJson)
+			}
+			return m
+		}
+	}
 	// FieldJSONTagWithNS specify JSON tag with name strategy
 	FieldJSONTagWithNS = func(schemaName func(columnName string) (tagContent string)) model.ModifyFieldOpt {
 		return func(m *model.Field) *model.Field {
 			if schemaName != nil {
 				m.Tag.Set(field.TagKeyJson, schemaName(m.ColumnName))
-
 			}
 			return m
 		}

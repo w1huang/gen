@@ -2,67 +2,93 @@ package gen
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
 	"gorm.io/driver/postgres"
+	"gorm.io/gen/campaign"
 	"gorm.io/gen/field"
+	"gorm.io/gen/internal/model"
+	"gorm.io/gen/lookup"
 	"gorm.io/gorm"
 )
 
-var dbSchema = "campaign"
-var username = "data_owner"
-var password = "Secret1!"
-var hostname = "localhost"
-var port = "5432"
-var dbName = "am_api_db"
-var tableName = "line_item"
-var postgresUrlTemplate = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?search_path=SCHEMA&client_encoding=UTF8", username, password, hostname, port, dbName)
+type DbConfig struct {
+	dbName   string
+	username string
+	password string
+	hostname string
+	port     int32
+	dbSchema string
+}
+
+func (dbCfg *DbConfig) WithDbSchema(schema string) {
+	dbCfg.dbSchema = schema
+}
+
+func (dbCfg *DbConfig) GetDbUrl() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%v/%s?search_path=%s&client_encoding=UTF8", dbCfg.username, dbCfg.password, dbCfg.hostname, dbCfg.port, dbCfg.dbName, dbCfg.dbSchema)
+}
+
+func (dbCfg *DbConfig) setDbSchema(schema string, g *Generator) *gorm.DB {
+	g.ModelPkgPath = "./" + schema
+	dbCfg.WithDbSchema(schema)
+	gormdb, _ := gorm.Open(postgres.Open(dbCfg.GetDbUrl()))
+	g.UseDB(gormdb)
+
+	return gormdb
+}
 
 var dataType = map[string]func(columnType gorm.ColumnType) (dataType string){
 	"varchar": func(columnType gorm.ColumnType) string {
-		nullable, ok := columnType.Nullable()
-		if nullable && ok {
-			return "sql.NullString"
-		} else {
-			return columnType.ScanType().Name()
-		}
+		return nullTypeResolver(columnType)
 	},
 	"text": func(columnType gorm.ColumnType) string {
-		nullable, ok := columnType.Nullable()
-		if nullable && ok {
-			return "sql.NullString"
-		} else {
-			return columnType.ScanType().Name()
-		}
+		return nullTypeResolver(columnType)
 	},
 	"int4": func(columnType gorm.ColumnType) string {
-		nullable, ok := columnType.Nullable()
-		if nullable && ok {
-			return "sql.NullInt32"
-		} else {
-			return columnType.ScanType().Name()
-		}
+		return nullTypeResolver(columnType)
 	},
 	"int8": func(columnType gorm.ColumnType) string {
-		nullable, ok := columnType.Nullable()
-		if nullable && ok {
-			return "sql.NullInt64"
-		} else {
-			return columnType.ScanType().Name()
-		}
+		return nullTypeResolver(columnType)
 	},
 	"timestamptz": func(columnType gorm.ColumnType) string {
-		nullable, ok := columnType.Nullable()
-		if nullable && ok {
-			return "sql.NullTime"
-		} else {
-			return "time.Time"
-		}
+		return nullTypeResolver(columnType)
 	},
 }
 
-var modelGenOpts = []ModelOpt{FieldType("deleted_dtm", "gorm.DeletedAt"),
+var nullTypeResolver = func(columnType gorm.ColumnType) string {
+	nullable, ok := columnType.Nullable()
+	databaseTypeName := columnType.DatabaseTypeName()
+	var retVal string
+	// Handles nullable type
+	if nullable && ok {
+		switch databaseTypeName {
+		case "varchar":
+			retVal = "sql.NullString"
+		case "text":
+			retVal = "sql.NullString"
+		case "int4":
+			retVal = "sql.NullInt32"
+		case "int8":
+			retVal = "sql.NullInt64"
+		case "timestamptz":
+			retVal = "sql.NullTime"
+		}
+	} else { // Non-nullable types handler
+		if databaseTypeName == "timestamptz" { // Special case for timestamptz
+			retVal = "time.Time"
+		} else {
+			retVal = columnType.ScanType().Name()
+		}
+	}
+
+	return retVal
+}
+
+var modelGenOpts = []ModelOpt{
+	FieldType("deleted_dtm", "gorm.DeletedAt"),
 	FieldType("created_dtm", "time.Time"),
 	FieldType("modified_dtm", "time.Time"),
 	FieldGORMTag("created_dtm", func(tag field.GormTag) field.GormTag { return tag.Set("autoCreateTime", "milli").Remove("default") }),
@@ -79,57 +105,81 @@ var modelGenOpts = []ModelOpt{FieldType("deleted_dtm", "gorm.DeletedAt"),
 	// 	}),
 }
 
-func mkPostgresUrl(template string, schema string) string {
-	return strings.ReplaceAll(template, "SCHEMA", schema)
+var RemoveFieldJSONTagReg = func(columnNameReg string) model.ModifyFieldOpt {
+	reg := regexp.MustCompile(columnNameReg)
+	return func(m *model.Field) *model.Field {
+		if reg.MatchString(m.ColumnName) {
+			m.Tag.Remove(field.TagKeyJson)
+		}
+		return m
+	}
 }
 
-func Test(t *testing.T) {
-	var postgres_url string
-	var gormdb *gorm.DB
+var FieldCommentReg = func(columnNameReg string, comment string) model.ModifyFieldOpt {
+	reg := regexp.MustCompile(columnNameReg)
+	return func(m *model.Field) *model.Field {
+		if reg.MatchString(m.ColumnName) {
+			m.ColumnComment = comment
+			m.MultilineComment = strings.Contains(comment, "\n")
+		}
+		return m
+	}
+}
+
+var BuildFieldRelate = func(g *Generator, tableName string, relModel interface{}) model.CreateFieldOpt {
+	ns := g.db.NamingStrategy
+	tableSchemName := ns.SchemaName(tableName)
+	columnDbName := tableName + "_id"
+	columnSchemaName := ns.SchemaName(columnDbName)
+	return FieldRelateModel(field.BelongsTo, tableSchemName, relModel,
+		&field.RelateConfig{
+			GORMTag: field.GormTag{"foreignKey": []string{columnSchemaName}, "references": []string{columnDbName}},
+			JSONTag: "",
+		},
+	)
+}
+
+func TestAppTest(t *testing.T) {
+	var dbConfig DbConfig = DbConfig{
+		username: "data_owner",
+		password: "Secret1!",
+		hostname: "localhost",
+		port:     5432,
+		dbName:   "am_api_db",
+	}
 
 	g := NewGenerator(Config{
-		importPkgPaths: []string{"\"gorm.io/gen/models\""},
-		// OutPath:           "./query", //producing interfaces
 		Mode:              WithoutContext | WithDefaultQuery | WithQueryInterface,
 		FieldWithIndexTag: true,
 	})
 	g.WithDataTypeMap(dataType)
-	g.WithFileNameStrategy(func(tableName string) (fileName string) { return tableName })
-	// g.WithTableNameStrategy(func(tableName string) (targetTableName string) { return db_schema + "." + tableName })
-	// gormdb, _ := gorm.Open(postgres.Open(postgres_url), &gorm.Config{
-	// 	NamingStrategy: schema.NamingStrategy{
-	// 		TablePrefix:   db_schema + ".", // schema name
-	// 		SingularTable: false,
-	// 	}})
 
-	// dbSchema = "org"
-	// g.ModelPkgPath = "./models/" + dbSchema
-	// postgres_url = mkPostgresUrl(postgresUrlTemplate, dbSchema)
+	// dbConfig.setDbSchema("lookup", g)
+	// g.GenerateModel("inventory_source", modelGenOpts...)
 
-	// gormdb, _ = gorm.Open(postgres.Open(postgres_url))
-	// g.UseDB(gormdb)
+	// dbConfig.setDbSchema("lookup", g)
+	// g.GenerateModel("campaign_goal", modelGenOpts...)
 
-	// account := g.GenerateModel("account", modelGenOpts...)
-	// account := g.db.Preload("account")
+	// campaignGoal := lookup.CampaignGoal{}
+	// dbConfig.setDbSchema("campaign", g)
+	// g.GenerateModel("campaign", append(
+	// 	modelGenOpts,
+	// 	BuildFieldRelate(g, "campaign_goal", campaignGoal),
+	// )...)
 
-	dbSchema = "org"
-	g.ModelPkgPath = "./models/" + dbSchema
-	postgres_url = mkPostgresUrl(postgresUrlTemplate, dbSchema)
-	gormdb, _ = gorm.Open(postgres.Open(postgres_url))
-	g.UseDB(gormdb)
-	organization := g.GenerateModel("organization", modelGenOpts...)
+	// dbConfig.setDbSchema("campaign", g)
+	// g.GenerateModel("targeting", modelGenOpts...)
 
-	account := g.GenerateModel("account", append(modelGenOpts,
-		FieldRelateModel(field.BelongsTo, "Organization", organization,
-			&field.RelateConfig{
-				//RelateSlice: true,
-				// GORMTag: field.GormTag{}.Set("foriegnKey", "AccountId"),
-				GORMTag: field.GormTag{"foreignKey": []string{"OrganizationId"}, "references": []string{"organization_id"}},
-				// JSONTag: "",
-			}),
-		// FieldType("Account", "org.Account"),
+	inventorySource := lookup.InventorySource{}
+	targeting := campaign.Targeting{}
+	campaign := campaign.Campaign{}
+	dbConfig.setDbSchema("campaign", g)
+	g.GenerateModel("line_item", append(
+		modelGenOpts,
+		BuildFieldRelate(g, "campaign", campaign),
+		BuildFieldRelate(g, "targeting", targeting),
+		BuildFieldRelate(g, "inventory_source", inventorySource),
 	)...)
-	// g.Execute()
 
-	g.ApplyBasic(organization, account)
+	g.Execute()
 }

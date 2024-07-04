@@ -247,9 +247,9 @@ func (c *RelateConfig) GetTag(fieldName string) Tag {
 	if c.Tag == nil {
 		c.Tag = Tag{}
 	}
-	if c.JSONTag == "" {
-		c.JSONTag = ns.ColumnName("", fieldName)
-	}
-	c.Tag.Set(TagKeyJson, c.JSONTag)
+	// if c.JSONTag == "" {
+	// 	c.JSONTag = ns.ColumnName("", fieldName)
+	// }
+	// c.Tag.Set(TagKeyJson, c.JSONTag)
 	return c.Tag
 }

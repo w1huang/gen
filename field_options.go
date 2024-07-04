@@ -142,6 +142,7 @@ var (
 		return func(m *model.Field) *model.Field {
 			if schemaName != nil {
 				m.Tag.Set(field.TagKeyJson, schemaName(m.ColumnName))
+
 			}
 			return m
 		}

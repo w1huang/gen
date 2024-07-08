@@ -105,9 +105,9 @@ func (c *Column) buildGormTag() field.GormTag {
 			continue
 		}
 		if uniq, _ := idx.Unique(); uniq {
-			tag.Append(field.TagKeyGormUniqueIndex, fmt.Sprintf("%s,priority:%d", idx.Name(), idx.Priority))
+			tag.Append(field.TagKeyGormUniqueIndex, fmt.Sprintf("%s", idx.Name()))
 		} else {
-			tag.Append(field.TagKeyGormIndex, fmt.Sprintf("%s,priority:%d", idx.Name(), idx.Priority))
+			tag.Append(field.TagKeyGormIndex, fmt.Sprintf("%s", idx.Name()))
 		}
 	}
 

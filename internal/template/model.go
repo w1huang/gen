@@ -14,7 +14,7 @@ import (
 	{{range .ImportPkgPaths}}{{.}} ` + "\n" + `{{end}}
 )
 
-{{if .TableName -}}const TableName{{.ModelStructName}} = "{{.TableName}}"{{- end}}
+{{if .TableName -}}const TableName{{.ModelStructName}} = "{{.StructInfo.Package}}.{{.TableName}}"{{- end}}
 
 // {{.ModelStructName}} {{.StructComment}}
 type {{.ModelStructName}} struct {
@@ -24,7 +24,7 @@ type {{.ModelStructName}} struct {
 {{.ColumnComment}}
     */
 	{{end -}}
-    {{.Name}} {{.Type}} ` + "`{{.Tags}}` " +
+    {{.Name}} {{.Type}} ` + "{{.Tags}} " +
 	"{{if not .MultilineComment}}{{if .ColumnComment}}// {{.ColumnComment}}{{end}}{{end}}" +
 	`{{end}}
 }

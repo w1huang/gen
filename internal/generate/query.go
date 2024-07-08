@@ -156,7 +156,7 @@ func (b *QueryStructMeta) StructComment() string {
 		return b.TableComment
 	}
 	if b.TableName != "" {
-		return fmt.Sprintf(`mapped from table <%s>`, b.TableName)
+		return fmt.Sprintf(`mapped from table <%s.%s>`, b.StructInfo.Package, b.TableName)
 	}
 	return `mapped from object`
 }

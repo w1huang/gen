@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"gorm.io/gen/field"
@@ -184,7 +185,12 @@ func (m *Field) Tags() string {
 	if gormTag := strings.TrimSpace(m.GORMTag.Build()); gormTag != "" {
 		m.Tag.Set(field.TagKeyGorm, gormTag)
 	}
-	return m.Tag.Build()
+	tags := m.Tag.Build()
+
+	if tags != "" {
+		return fmt.Sprintf("`%s`", tags)
+	}
+	return tags
 }
 
 // IsRelation ...

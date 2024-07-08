@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"gorm.io/driver/postgres"
-	"gorm.io/gen/campaign"
 	"gorm.io/gen/field"
 	"gorm.io/gen/internal/model"
 	"gorm.io/gen/lookup"
@@ -92,7 +91,7 @@ var modelGenOpts = []ModelOpt{
 	FieldType("created_dtm", "time.Time"),
 	FieldType("modified_dtm", "time.Time"),
 	FieldGORMTag("created_dtm", func(tag field.GormTag) field.GormTag { return tag.Set("autoCreateTime", "milli").Remove("default") }),
-	FieldGORMTag("modified_dtm", func(tag field.GormTag) field.GormTag { return tag.Set("autoCreateTime", "milli").Remove("default") }),
+	FieldGORMTag("modified_dtm", func(tag field.GormTag) field.GormTag { return tag.Set("autoUpdateTime", "milli").Remove("default") }),
 	FieldGORMTagReg(".+", func(tag field.GormTag) field.GormTag {
 		return tag.Remove("column").Remove("comment").Remove("not null")
 	}),
@@ -139,6 +138,34 @@ var BuildFieldRelate = func(g *Generator, tableName string, relModel interface{}
 	)
 }
 
+func GenerateModelForAttributeAndAttributeGroup(schemaName string, tableName string, dbConfig DbConfig, g *Generator) {
+	dataType := lookup.DataType{}
+	dbConfig.setDbSchema(schemaName, g)
+	g.GenerateModel(fmt.Sprintf("%s_attribute", tableName), append(
+		modelGenOpts,
+		BuildFieldRelate(g, "data_type", dataType),
+	)...)
+
+	dbConfig.setDbSchema(schemaName, g)
+	g.GenerateModel(fmt.Sprintf("%s_attribute_group", tableName), modelGenOpts...)
+}
+
+func GenerateModelForAttributeGroupAttributeAndAttributeValue(schemaName string, tableName string, dbConfig DbConfig, g *Generator, base interface{}, attribute interface{}, attributeGroup interface{}) {
+	dbConfig.setDbSchema(schemaName, g)
+	g.GenerateModel(fmt.Sprintf("%s_attribute_group_attribute", tableName), append(
+		modelGenOpts,
+		BuildFieldRelate(g, fmt.Sprintf("%s_attribute", tableName), attribute),
+		BuildFieldRelate(g, fmt.Sprintf("%s_attribute_group", tableName), attributeGroup),
+	)...)
+
+	dbConfig.setDbSchema(schemaName, g)
+	g.GenerateModel(fmt.Sprintf("%s_attribute_value", tableName), append(
+		modelGenOpts,
+		BuildFieldRelate(g, fmt.Sprintf("%s_attribute", tableName), attribute),
+		BuildFieldRelate(g, tableName, base),
+	)...)
+}
+
 func TestAppTest(t *testing.T) {
 	var dbConfig DbConfig = DbConfig{
 		username: "data_owner",
@@ -151,6 +178,7 @@ func TestAppTest(t *testing.T) {
 	g := NewGenerator(Config{
 		Mode:              WithoutContext | WithDefaultQuery | WithQueryInterface,
 		FieldWithIndexTag: true,
+		WithModelUnitTest: true,
 	})
 	g.WithDataTypeMap(dataType)
 
@@ -170,16 +198,39 @@ func TestAppTest(t *testing.T) {
 	// dbConfig.setDbSchema("campaign", g)
 	// g.GenerateModel("targeting", modelGenOpts...)
 
-	inventorySource := lookup.InventorySource{}
-	targeting := campaign.Targeting{}
-	campaign := campaign.Campaign{}
-	dbConfig.setDbSchema("campaign", g)
-	g.GenerateModel("line_item", append(
-		modelGenOpts,
-		BuildFieldRelate(g, "campaign", campaign),
-		BuildFieldRelate(g, "targeting", targeting),
-		BuildFieldRelate(g, "inventory_source", inventorySource),
-	)...)
+	// inventorySource := lookup.InventorySource{}
+	// targeting := campaign.Targeting{}
+	// campaign := campaign.Campaign{}
+	// dbConfig.setDbSchema("campaign", g)
+	// g.GenerateModel("line_item", append(
+	// 	modelGenOpts,
+	// 	BuildFieldRelate(g, "campaign", campaign),
+	// 	BuildFieldRelate(g, "targeting", targeting),
+	// 	BuildFieldRelate(g, "inventory_source", inventorySource),
+	// )...)
 
+	// dbConfig.setDbSchema("lookup", g)
+	// g.GenerateModel("data_type", modelGenOpts...)
+
+	// GenerateModelForAttributeAndAttributeGroup("campaign", "campaign", dbConfig, g)
+
+	// Campaign := campaign.Campaign{}
+	// CampaignAttribute := campaign.CampaignAttribute{}
+	// CampaignAttributeGroup := campaign.CampaignAttributeGroup{}
+	// GenerateModelForAttributeGroupAttributeAndAttributeValue("campaign", "campaign", dbConfig, g, Campaign, CampaignAttribute, CampaignAttributeGroup)
+
+	// GenerateModelForAttributeAndAttributeGroup("campaign", "line_item", dbConfig, g)
+
+	// LineItem := campaign.LineItem{}
+	// LineItemAttribute := campaign.LineItemAttribute{}
+	// LineItemAttributeGroup := campaign.LineItemAttributeGroup{}
+	// GenerateModelForAttributeGroupAttributeAndAttributeValue("campaign", "line_item", dbConfig, g, LineItem, LineItemAttribute, LineItemAttributeGroup)
+
+	// GenerateModelForAttributeAndAttributeGroup("campaign", "targeting", dbConfig, g)
+
+	// Targeting := campaign.Targeting{}
+	// TargetingAttribute := campaign.TargetingAttribute{}
+	// TargetingAttributeGroup := campaign.TargetingAttributeGroup{}
+	// GenerateModelForAttributeGroupAttributeAndAttributeValue("campaign", "targeting", dbConfig, g, Targeting, TargetingAttribute, TargetingAttributeGroup)
 	g.Execute()
 }

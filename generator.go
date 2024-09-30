@@ -271,6 +271,11 @@ func (g *Generator) Execute() {
 		panic("generate query code fail")
 	}
 
+	if err := g.generateModelUnitTestFile(); err != nil {
+		g.db.Logger.Error(context.Background(), "generate model test fail: %s", err)
+		panic("generate model test fail")
+	}
+
 	g.info("Generate code done.")
 }
 
@@ -280,6 +285,65 @@ func (g *Generator) info(logInfos ...string) {
 		g.db.Logger.Info(context.Background(), l)
 		log.Println(l)
 	}
+}
+
+// generateModelFile generate model structures and save to file
+func (g *Generator) generateModelUnitTestFile() error {
+	if len(g.models) == 0 || !g.WithModelUnitTest {
+		return nil
+	}
+
+	modelOutPath, err := g.getModelUnitTestOutputPath()
+	if err != nil {
+		return err
+	}
+
+	if err = os.MkdirAll(modelOutPath, os.ModePerm); err != nil {
+		return fmt.Errorf("create model pkg path(%s) fail: %s", modelOutPath, err)
+	}
+
+	errChan := make(chan error)
+	pool := pools.NewPool(concurrent)
+	for _, data := range g.models {
+		if data == nil || !data.Generated {
+			continue
+		}
+		pool.Wait()
+		go func(data *generate.QueryStructMeta) {
+			defer pool.Done()
+
+			var buf bytes.Buffer
+			err := render(tmpl.ModelTest, &buf, data)
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			// for _, method := range data.ModelMethods {
+			// 	err = render(tmpl.ModelMethod, &buf, method)
+			// 	if err != nil {
+			// 		errChan <- err
+			// 		return
+			// 	}
+			// }
+
+			modelFile := modelOutPath + data.FileName + "_test.go"
+			err = g.output(modelFile, buf.Bytes())
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			g.info(fmt.Sprintf("generate model test file(table <%s> -> {%s.%s}): %s", data.TableName, data.StructInfo.Package, data.StructInfo.Type, modelFile))
+		}(data)
+	}
+	select {
+	case err = <-errChan:
+		return err
+	case <-pool.AsyncWaitAll():
+		g.fillModelPkgPath(modelOutPath)
+	}
+	return nil
 }
 
 // generateQueryFile generate query code and save to file
@@ -527,6 +591,19 @@ func (g *Generator) getModelOutputPath() (outPath string, err error) {
 		}
 	} else {
 		outPath = filepath.Join(filepath.Dir(g.OutPath), g.ModelPkgPath)
+	}
+	return outPath + string(os.PathSeparator), nil
+}
+
+func (g *Generator) getModelUnitTestOutputPath() (outPath string, err error) {
+	testOutputPath := filepath.Join(g.ModelPkgPath, "tests")
+	if strings.Contains(testOutputPath, string(os.PathSeparator)) {
+		outPath, err = filepath.Abs(testOutputPath)
+		if err != nil {
+			return "", fmt.Errorf("cannot parse model pkg path: %w", err)
+		}
+	} else {
+		outPath = filepath.Join(filepath.Dir(g.OutPath), testOutputPath)
 	}
 	return outPath + string(os.PathSeparator), nil
 }

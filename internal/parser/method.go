@@ -11,7 +11,7 @@ import (
 
 func DefaultMethodTableName(structName string) *Method {
 	return &Method{
-		Receiver:   Param{IsPointer: true, Type: structName},
+		Receiver:   Param{IsPointer: false, Type: structName},
 		MethodName: "TableName",
 		Doc:        fmt.Sprint("TableName ", structName, "'s table name "),
 		Result:     []Param{{Type: "string"}},
